@@ -43,6 +43,13 @@ administrator can stop and disable the `sshd` service and disable the exact
 `OperatorBridge-SSH-Maintenance-Only` rule. Confirm the listener is closed. Do not
 delete pre-existing services, accounts or files as a generic rollback step.
 
+For an inspected failure before account creation only, `-ResumeEmptyPreparation`
+accepts an empty non-reparse maintenance directory and the unchanged inbound TCP-22
+block. It refuses existing accounts, SSH service/configuration, listeners, allow
+rules or directory contents. It preserves the block, does not delete artifacts,
+requires local password entry again, and cannot be combined with `-Activate`.
+This recovery path still requires target Windows verification.
+
 This bootstrap does not install or activate the business application, expose a web
 port, authorize an eBay account, grant access to owner browser profiles, or prove
 production readiness. Those require a separate tested application release and
