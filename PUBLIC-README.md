@@ -25,6 +25,8 @@ Never supply a private key. No actual site configuration belongs in this reposit
 Preparation asks the machine owner to enter a new strong local password for
 `BridgeMaint`. The account is an ordinary user, separate from operators, owners and
 the eventual application service identity. SSH accepts public keys only.
+The script imposes no additional password-length minimum; Windows password policy
+still applies. Cancelling the credential dialog stops preparation before installation.
 
 Preparation keeps SSH disabled and TCP port 22 blocked. It prints the host-key
 fingerprint, which must be verified over an existing trusted channel. Only then

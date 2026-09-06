@@ -81,7 +81,8 @@ if (Get-NetTCPConnection -State Listen -LocalPort 22 -ErrorAction SilentlyContin
 
 # The machine owner enters the new password locally; never put it in a script or chat.
 $credential = Get-Credential -UserName $name -Message 'Create BridgeMaint: enter a new strong local password. SSH will accept keys only.'
-if (-not $credential -or $credential.Password.Length -lt 16) { throw 'Cancelled or password shorter than 16 characters. Nothing installed.' }
+if (-not $credential) { throw 'Credential entry cancelled. Nothing installed.' }
+# Do not impose a script-specific length rule; Windows enforces its password policy.
 if ($credential.UserName -notin @($name, "$env:COMPUTERNAME\$name")) { throw 'Unexpected account name.' }
 
 # A temporary explicit block prevents exposure even if installation creates a broad allow rule.
