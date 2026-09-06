@@ -5,9 +5,11 @@ param(
     [Parameter(Mandatory=$true)][string]$SourceIp,
     [Parameter(Mandatory=$true)][string]$ListenIp,
     [Parameter(Mandatory=$true)][string]$PublicKey,
-    [switch]$Activate
+    [switch]$Activate,
+    [switch]$ResumeEmptyPreparation
 )
 $ErrorActionPreference = 'Stop'
+if ($Activate -and $ResumeEmptyPreparation) { throw 'Preparation recovery and activation must be separate.' }
 $name = 'BridgeMaint'
 foreach ($address in @($SourceIp, $ListenIp)) {
     if ($address -notmatch '^100\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$' -or
@@ -74,10 +76,32 @@ if ($Activate) {
 # Do not overwrite or repurpose pre-existing service/accounts/configuration.
 if (Get-Service sshd -ErrorAction SilentlyContinue) { throw 'Existing SSH service detected; inspect manually instead of overwriting.' }
 if (Get-LocalUser $name -ErrorAction SilentlyContinue) { throw 'Existing maintenance account detected; inspect manually.' }
-if (Test-Path $root) { throw 'Existing maintenance directory detected; inspect before retrying.' }
 if (Test-Path $config) { throw 'Existing SSH configuration detected; inspect before retrying.' }
-if (Get-NetFirewallRule -Name $blockName,$allowName -ErrorAction SilentlyContinue) { throw 'Existing bootstrap rules detected; inspect before retrying.' }
 if (Get-NetTCPConnection -State Listen -LocalPort 22 -ErrorAction SilentlyContinue) { throw 'Port 22 already in use.' }
+if ($ResumeEmptyPreparation) {
+    # Narrow recovery for the observed pre-account failure. Never adopt later partial installs.
+    $directory = Get-Item -LiteralPath $root -Force
+    if (-not $directory.PSIsContainer -or
+        ($directory.Attributes -band [IO.FileAttributes]::ReparsePoint) -or
+        @(Get-ChildItem -LiteralPath $root -Force).Count -ne 0) {
+        throw 'Recovery requires the original empty, non-reparse maintenance directory.'
+    }
+    if (Get-NetFirewallRule -Name $allowName -ErrorAction SilentlyContinue) { throw 'Recovery refuses an existing allow rule.' }
+    $block = Get-NetFirewallRule -Name $blockName
+    $blockPorts = $block | Get-NetFirewallPortFilter
+    $blockAddresses = $block | Get-NetFirewallAddressFilter
+    if ($block.Enabled -ne 'True' -or $block.Direction -ne 'Inbound' -or
+        $block.Action -ne 'Block' -or $block.Profile -ne 'Any' -or
+        $blockPorts.Protocol -ne 'TCP' -or $blockPorts.LocalPort -ne '22' -or
+        $blockPorts.RemotePort -ne 'Any' -or
+        @($blockAddresses.LocalAddress).Count -ne 1 -or $blockAddresses.LocalAddress -ne 'Any' -or
+        @($blockAddresses.RemoteAddress).Count -ne 1 -or $blockAddresses.RemoteAddress -ne 'Any') {
+        throw 'Recovery requires the unchanged inbound safety block for TCP 22.'
+    }
+} else {
+    if (Test-Path $root) { throw 'Existing maintenance directory detected; inspect before retrying.' }
+    if (Get-NetFirewallRule -Name $blockName,$allowName -ErrorAction SilentlyContinue) { throw 'Existing bootstrap rules detected; inspect before retrying.' }
+}
 
 # The machine owner enters the new password locally; never put it in a script or chat.
 $credential = Get-Credential -UserName $name -Message 'Create BridgeMaint: enter a new strong local password. SSH will accept keys only.'
@@ -86,10 +110,12 @@ if (-not $credential) { throw 'Credential entry cancelled. Nothing installed.' }
 if ($credential.UserName -notin @($name, "$env:COMPUTERNAME\$name")) { throw 'Unexpected account name.' }
 
 # A temporary explicit block prevents exposure even if installation creates a broad allow rule.
-New-NetFirewallRule -Name $blockName -DisplayName 'Operator Bridge SSH bootstrap safety block' -Direction Inbound -Action Block -Protocol TCP -LocalPort 22 -Profile Any | Out-Null
+if (-not $ResumeEmptyPreparation) {
+    New-NetFirewallRule -Name $blockName -DisplayName 'Operator Bridge SSH bootstrap safety block' -Direction Inbound -Action Block -Protocol TCP -LocalPort 22 -Profile Any | Out-Null
+}
 try {
     Protect-Directory $root
-    $account = New-LocalUser -Name $name -Password $credential.Password -Description 'Non-admin Bridge deployment maintenance; dedicated SSH key only'
+    $account = New-LocalUser -Name $name -Password $credential.Password -Description 'Bridge maintenance; non-admin; SSH key only'
     $credential = $null
     Add-LocalGroupMember -SID 'S-1-5-32-545' -Member $account
     if (Get-LocalGroupMember -Group $admins | Where-Object SID -eq $account.SID) { throw 'Unexpected administrator membership.' }
