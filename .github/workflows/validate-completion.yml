@@ -1,0 +1,27 @@
+name: Validate maintenance completion
+on:
+  push:
+    paths:
+      - complete-maintenance.ps1
+      - validate-completion.ps1
+      - .github/workflows/validate-completion.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows-validation:
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - name: Fetch this exact public commit, without credentials
+        shell: powershell
+        run: |
+          $base = "https://raw.githubusercontent.com/$env:GITHUB_REPOSITORY/$env:GITHUB_SHA"
+          Invoke-WebRequest -UseBasicParsing "$base/complete-maintenance.ps1" -OutFile complete-maintenance.ps1
+          Invoke-WebRequest -UseBasicParsing "$base/validate-completion.ps1" -OutFile validate-completion.ps1
+      - name: Windows PowerShell 5.1 syntax and isolated function tests
+        shell: powershell
+        run: .\validate-completion.ps1
+      - name: PowerShell 7 syntax and isolated function tests
+        shell: pwsh
+        run: .\validate-completion.ps1
